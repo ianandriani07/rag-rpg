@@ -26,7 +26,7 @@ O projeto é um pipeline local que usa:
 
 ### 1. Pré-requisitos
 
-- Python 3.10+
+- Python 3.12
 - [Docker + Docker Compose](https://docs.docker.com/get-docker/)
 - [Ollama](https://ollama.com) instalado
 - Git
