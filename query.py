@@ -1,23 +1,29 @@
 from sentence_transformers import SentenceTransformer
 from qdrant_client import QdrantClient
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from ollama import Client as OllamaClient
 import torch
-import subprocess
 import textwrap
 
 # Se possuir gpu usa ela
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"🔧 Usando dispositivo: {device}")
 
 # Carrega modelos
-embedder = SentenceTransformer("BAAI/bge-m3")  # Embedding para busca semântica
+
+embedder = SentenceTransformer("BAAI/bge-m3")
+if device.type == "cuda":
+    embedder = embedder.to(device)
+
 reranker_tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-reranker-base")
 reranker_model = AutoModelForSequenceClassification.from_pretrained("BAAI/bge-reranker-base").to(device)
 
 qdrant = QdrantClient("localhost", port=6333)
+ollama = OllamaClient()
 
 def responder(pergunta):
     # Embedding da pergunta
-    question_vector = embedder.encode(pergunta).tolist()
+    question_vector = embedder.encode(pergunta, device=device).tolist()
 
     # Busca os 20 mais relevantes
     resultados = qdrant.search(
@@ -58,21 +64,19 @@ Pergunta: {pergunta}
 Resposta:"""
 
     # Usa o modelo local via Ollama
-    resposta = subprocess.run(
-        ["ollama", "run", "gemma3:4b-it-qat"],
-        input=prompt.encode(),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL
+    resposta = ollama.chat(
+        model="gemma3:4b-it-qat",
+        messages=[{"role": "user", "content": prompt}]
     )
 
     print("\n🧠 Resposta da IA:")
-    print(textwrap.fill(resposta.stdout.decode(), width=100)+"\n")
+    print(textwrap.fill(resposta["message"]["content"], width=100) + "\n")
 
 if __name__ == "__main__":
 
     while True:
         pergunta = input("Digite sua pergunta sobre o mundo: ")
 
-        if pergunta == "sair":
+        if pergunta.lower() == "sair":
             break
         responder(pergunta)

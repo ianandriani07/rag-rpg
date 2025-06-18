@@ -1,12 +1,24 @@
 from sentence_transformers import SentenceTransformer
 from qdrant_client import QdrantClient, models
+import torch
 import os
 import textwrap
 
-# Carrega o modelo de embeddings BGE-M3 (dimensão 1024)
-model = SentenceTransformer("BAAI/bge-m3")
-qdrant = QdrantClient("localhost", port=6333)
+# Carrega o modelo com suporte ao código remoto
+model = SentenceTransformer(
+    "BAAI/bge-m3",
+    trust_remote_code=True
+)
 
+
+# Move para GPU se disponível
+if torch.cuda.is_available():
+    model = model.to("cuda")
+    print("✅ Rodando na GPU")
+else:
+    print("⚠️  Rodando na CPU")
+
+qdrant = QdrantClient("localhost", port=6333)
 collection_name = "rpg_lore_bge_m3"
 
 # Cria a coleção se ela ainda não existir
@@ -21,10 +33,8 @@ if not qdrant.collection_exists(collection_name):
 
 # Quebra textos longos em pedaços menores (aproximadamente 600 caracteres)
 def split_text(text, max_len=600):
-    # Garante que não quebra no meio das palavras
     return textwrap.wrap(text, max_len, break_long_words=False, break_on_hyphens=False)
 
-# Inicia contador
 point_id = 1
 
 # Lê todos os arquivos .txt dentro de docs/
@@ -38,7 +48,6 @@ for file_name in os.listdir("docs"):
         chunks = split_text(content)
 
         for chunk in chunks:
-            # Prefixo obrigatório do bge-m3
             prompt_chunk = "Representacao para recuperacao: " + chunk
             vector = model.encode(prompt_chunk).tolist()
 
