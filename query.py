@@ -25,24 +25,23 @@ qdrant = QdrantClient("localhost", port=6333)
 ollama = OllamaClient(timeout=120)
 
 def responder(pergunta, model_name="qwen2.5:7b"):
-    # Embedding da pergunta
-    question_vector = embedder.encode(
-        pergunta,
-        device=device,
-        normalize_embeddings=True,
-        prompt_name="query"  # <— bge-m3 entende isso
-    ).tolist()
+    # Embedding da pergunta (com fallback se 'query' não existir)
+    try:
+        question_vector = embedder.encode(
+            pergunta,
+            device=device,
+            normalize_embeddings=True,
+            prompt_name="query"
+        ).tolist()
+    except Exception:
+        BGE_QUERY_PREFIX = "Represent this query for retrieving relevant documents: "
+        question_vector = embedder.encode(
+            BGE_QUERY_PREFIX + pergunta,
+            device=device,
+            normalize_embeddings=True
+        ).tolist()
 
-    # Busca os 20 mais relevantes
-    #resultados = qdrant.search(
-        #collection_name="rpg_lore_bge_m3",
-        #query_vector=question_vector,
-        #limit=20,
-        #with_payload=True,
-        #with_vectors=False,
-        #score_threshold=0.2  # ajuste conforme seus dados
-    #)
-
+    # Busca no Qdrant
     resultados = qdrant.query_points(
         collection_name="rpg_lore_bge_m3",
         query=question_vector,
@@ -53,34 +52,53 @@ def responder(pergunta, model_name="qwen2.5:7b"):
     ).points
 
     # Pares pergunta-contexto
-    pares = [(pergunta, r.payload.get("text", "")) for r in resultados if r.payload and r.payload.get("text")]
+    textos = []
+    for r in resultados:
+        txt = (r.payload or {}).get("text")
+        if txt:
+            textos.append(txt)
+
+    pares = [(pergunta, t) for t in textos]
     if not pares:
-        print("Resultados não possuem campo 'text' no payload.\n")
-        return
+        # >>> SEMPRE retorne 3 valores <<<
+        return "Nenhum contexto relevante encontrado.", "", ""
 
     # Tokeniza para reranking
     inputs = reranker_tokenizer.batch_encode_plus(
         pares,
         padding=True,
-        truncation="only_second",  # mantém a pergunta (q) inteira; trunca só o doc (p)
+        truncation="only_second",
         max_length=512,
         return_tensors="pt"
     ).to(device)
 
-    # Faz reranking com gpu se tiver
+    # Reranking
     reranker_model.eval()
     with torch.amp.autocast("cuda", enabled=(device.type == "cuda")), torch.no_grad():
         scores = reranker_model(**inputs).logits.squeeze(-1)
 
-    # Seleciona os top 5
+    # Seleciona top-k
     k = min(5, len(pares))
     top_indices = scores.topk(k).indices.tolist()
 
     def trim(txt, n=1200):
         return txt if len(txt) <= n else txt[:n] + "…"
 
-    top = sorted(((scores[i].item(), trim(pares[i][1])) for i in top_indices), reverse=True)
-    contexto = "\n\n".join(c for _, c in top)
+    # Ordena por score desc
+    ranked = sorted(((scores[i].item(), i) for i in top_indices), reverse=True)
+
+    # Monta contexto e refs
+    contexto_chunks = []
+    refs_lines = []
+    for rank, (rr_score, idx) in enumerate(ranked, start=1):
+        contexto_chunks.append(trim(pares[idx][1]))
+        # resultados e pares têm o mesmo índice lógico
+        pid = getattr(resultados[idx], "id", f"idx:{idx}")
+        qscore = float(getattr(resultados[idx], "score", 0.0))
+        refs_lines.append(f"{rank}. id={pid}  qdrant={qscore:.4f}  rerank={rr_score:.4f}")
+
+    contexto = "\n\n".join(contexto_chunks)
+    refs = "\n".join(refs_lines)
 
     # Prompt final
     prompt = f"""Você é um cronista experiente e imparcial, com acesso apenas ao conteúdo abaixo.
@@ -94,7 +112,6 @@ Pergunta: {pergunta}
 Resposta:"""
 
     try:
-        # Usa o modelo local via Ollama
         resposta = ollama.chat(
             model=model_name,
             messages=[
@@ -113,21 +130,43 @@ Resposta:"""
                 "num_predict": 512
             }
         )
+        answer = resposta["message"]["content"].strip()
     except Exception as e:
-        print(f"Erro ao chamar o modelo: {e}\n")
-        return
+        # >>> SEMPRE retorne 3 valores <<<
+        return f"Erro ao chamar o modelo: {e}", contexto, refs
 
-    print("\n🧠 Resposta da IA:")
-    print(textwrap.fill(resposta["message"]["content"], width=100) + "\n")
+    # >>> SEMPRE retorne 3 valores <<<
+    return answer, contexto, refs
+
+
+# =============== Gradio ===============
+def gradio_interface(pergunta):
+    resposta, contexto, refs = responder(pergunta)
+    return resposta, contexto, refs
+
+iface = gr.Interface(
+    fn=gradio_interface,
+    inputs=gr.Textbox(label="Pergunte algo sobre o mundo", lines=2, placeholder="Quem foi Toya?"),
+    outputs=[
+        gr.Textbox(label="🧠 Resposta de Frosa", lines=12),
+        gr.Textbox(label="🔍 Trechos mais relevantes", lines=12),
+        gr.Textbox(label="📄 Referências bibliográficas", lines=8),
+    ],
+    title="🔠 Frosa, o Cronista de Mountainwild",
+    description="Sistema RAG que responde perguntas com base nas informações do mundo de Exandria."
+)
 
 if __name__ == "__main__":
-
-    while True:
-        pergunta = input("Digite sua pergunta sobre o mundo: ")
-
-        if pergunta.lower() in {"sair", "exit", "quit"}:
-            break
-
-        if not pergunta:
-            continue
-        responder(pergunta)
+    # escolha: comente a linha abaixo se ainda quiser usar o loop CLI
+    iface.launch()
+    # --- loop CLI antigo (opcional) ---
+    # while True:
+    #     pergunta = input("Digite sua pergunta sobre o mundo: ")
+    #     if pergunta.lower() in {"sair", "exit", "quit"}:
+    #         break
+    #     if not pergunta.strip():
+    #         continue
+    #     resp, ctx, refs = responder(pergunta)
+    #     print("\n🧠 Resposta da IA:\n" + textwrap.fill(resp, width=100))
+    #     print("\n🔍 Trechos mais relevantes:\n" + ctx)
+    #     print("\n📄 Referências:\n" + refs + "\n")
