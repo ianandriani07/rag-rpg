@@ -14,11 +14,12 @@ Os textos carregados descrevem o mundo de Exandria RPG, suas cidades, reinos, co
 
 O projeto é um pipeline local que usa:
 
-- **[BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3)** – para gerar embeddings semânticos dos textos
-- **[Qdrant](https://qdrant.tech/)** – banco vetorial para armazenar e buscar vetores
-- **[BAAI/bge-reranker-base](https://huggingface.co/BAAI/bge-reranker-base)** – reranker para ordenar trechos por relevância
-- **`gemma3:4b-it-qat`** via [Ollama](https://ollama.com) – modelo de linguagem que gera a resposta final com base no contexto
-- Tudo feito com **Python**, **Docker**, e aceleração via **GPU**, se disponível
+- **[BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3)** – para gerar embeddings semânticos dos textos  
+- **[Qdrant](https://qdrant.tech/)** – banco vetorial para armazenar e buscar vetores  
+- **[BAAI/bge-reranker-base](https://huggingface.co/BAAI/bge-reranker-base)** – reranker para ordenar trechos por relevância  
+- **Modelos via [Ollama](https://ollama.com)** (ex.: `qwen2.5:7b`, `gemma3:4b-it-qat`, `llama3.1:8b-instruct`) – LLM que gera a resposta final com base no contexto  
+- **[Gradio](https://www.gradio.app/)** – interface gráfica simples para interação no navegador  
+- Tudo feito com **Python**, **Docker**, e aceleração via **GPU**, se disponível  
 
 ---
 
@@ -26,10 +27,10 @@ O projeto é um pipeline local que usa:
 
 ### 1. Pré-requisitos
 
-- Python 3.12
-- [Docker + Docker Compose](https://docs.docker.com/get-docker/)
-- [Ollama](https://ollama.com) instalado
-- Git
+- Python 3.12  
+- [Docker + Docker Compose](https://docs.docker.com/get-docker/)  
+- [Ollama](https://ollama.com) instalado  
+- Git  
 
 ### 2. Clone o projeto
 
@@ -42,7 +43,10 @@ cd rag-rpg
 
 ```bash
 python -m venv .venv
-.\.venv\Scripts ctivate  # no Windows
+# no Windows
+.\.venv\Scripts\activate
+# no Linux/Mac
+source .venv/bin/activate
 ```
 
 ### 4. Instale as dependências
@@ -57,11 +61,14 @@ pip install -r requirements.txt
 docker-compose up -d
 ```
 
-### 6. Baixe o modelo do Ollama
+### 6. Baixe o(s) modelo(s) do Ollama
 
 ```bash
+ollama pull qwen2.5:7b
 ollama pull gemma3:4b-it-qat
 ```
+
+*(adicione outros modelos se quiser testar)*
 
 ### 7. Adicione seus arquivos de lore em `docs/`
 
@@ -73,23 +80,31 @@ Coloque seus arquivos `.txt` com a lore do seu mundo dentro da pasta `docs/`.
 python ingest.py
 ```
 
-### 9. Pergunte sobre o mundo
+### 9. Rode a interface (duas opções)
 
+#### 🔹 Linha de comando (CLI)
 ```bash
 python query.py
 ```
 
 Digite perguntas como:
 
-- Quem foi Gots e o que aconteceu com Toya?
-- O que foi o Ano das Portas Abertas?
-- Qual é a origem da Assembleia do Cérbero?
+- Quem foi Gots e o que aconteceu com Toya?  
+- O que foi o Ano das Portas Abertas?  
+- Qual é a origem da Assembleia do Cérbero?  
 
 Para sair, digite `sair`.
 
+#### 🔹 Interface gráfica (Gradio)
+```bash
+python query.py
+```
+
+Abra no navegador: [http://127.0.0.1:7860](http://127.0.0.1:7860)
+
 ---
 
-## ✨ Exemplo de uso
+## ✨ Exemplo de uso (CLI)
 
 ```bash
 Digite sua pergunta sobre o mundo: O que foi o Ano das Portas Abertas?
@@ -110,8 +125,7 @@ que se originou durante os conflitos...
                        ↓
              [reranking com bge-reranker]
                        ↓
-         [top 5 trechos] → [prompt para gemma3]
+         [top 5 trechos] → [prompt para modelo Ollama]
                        ↓
                  🧠 Resposta gerada!
 ```
-

@@ -149,8 +149,8 @@ iface = gr.Interface(
     inputs=gr.Textbox(label="Pergunte algo sobre o mundo", lines=2, placeholder="Quem foi Toya?"),
     outputs=[
         gr.Textbox(label="🧠 Resposta de Frosa", lines=12),
-        gr.Textbox(label="🔍 Trechos mais relevantes", lines=12),
-        gr.Textbox(label="📄 Referências bibliográficas", lines=8),
+        gr.Textbox(label="🔍 Trechos mais relevantes", lines=6),
+        gr.Textbox(label="📄 Referências bibliográficas", lines=4),
     ],
     title="🔠 Frosa, o Cronista de Mountainwild",
     description="Sistema RAG que responde perguntas com base nas informações do mundo de Exandria."
